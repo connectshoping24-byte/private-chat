@@ -33,6 +33,7 @@ button { margin-left:10px; padding:10px; border:none; background:#075e54; color:
 
 <div id="app" style="display:none;">
   <div class="header">Private Chat</div>
+
   <div id="chatBox"></div>
   <div id="typing"></div>
 
@@ -47,147 +48,154 @@ button { margin-left:10px; padding:10px; border:none; background:#075e54; color:
 <script>
 document.addEventListener("DOMContentLoaded", () => {
 
-// 🔑 CONFIG (REPLACE THIS)
+// 🔑 CONFIG (REPLACE THESE)
 const supabase = window.supabase.createClient(
   "https://acxtyboszuqibumlusjl.supabase.co",
-  "IsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHR5Ym9zenVxaWJ1bWx1c2psIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDA0MTMsImV4cCI6MjA5MDM3NjQxM30.3njMzRvDHIxAeAfmtEYMzQ2ibhSNphra_eQV-e3I_DU"
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHR5Ym9zenVxaWJ1bWx1c2psIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDA0MTMsImV4cCI6MjA5MDM3NjQxM30.3njMzRvDHIxAeAfmtEYMzQ2ibhSNphra_eQV-e3I_DU"
 );
-
-// 🔐 PASSWORD HASH (12345)
-const HASH = "5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9f0c3f7f9a";
 
 let myUser = 0;
 let typingTimer;
 
-// 🔐 HASH FUNCTION
-async function hash(t){
- let b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));
- return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
-}
+// 🔐 SIMPLE LOGIN
+async function enter() {
+  let p = document.getElementById("pass").value.trim();
 
-// 🔐 LOGIN
-async function enter(){
- let p=document.getElementById("pass").value;
- if(await hash(p)!==HASH) return alert("Wrong Password");
+  if (p !== "12345") {
+    alert("Wrong Password");
+    return;
+  }
 
- let {data:room}=await supabase.from("room").select("*").eq("id","main").single();
+  let { data: room } = await supabase
+    .from("room")
+    .select("*")
+    .eq("id", "main")
+    .single();
 
- if(room.users>=2) return alert("Room Full");
+  if (room.users >= 2) return alert("Room Full");
 
- myUser=room.users+1;
+  myUser = room.users + 1;
 
- await supabase.from("room").update({
-  users:room.users+1,
-  last_active:new Date()
- }).eq("id","main");
+  await supabase.from("room").update({
+    users: room.users + 1,
+    last_active: new Date()
+  }).eq("id", "main");
 
- localStorage.setItem("user",myUser);
+  localStorage.setItem("user", myUser);
 
- start();
+  start();
 }
 
 // 📶 RECONNECT
-async function checkReconnect(){
- let u=localStorage.getItem("user");
- if(u){
-   myUser=parseInt(u);
-   start();
- }
+function checkReconnect() {
+  let u = localStorage.getItem("user");
+  if (u) {
+    myUser = parseInt(u);
+    start();
+  }
 }
 
 // 🚀 START CHAT
-function start(){
- document.getElementById("login").style.display="none";
- document.getElementById("app").style.display="block";
+function start() {
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display = "block";
 
- listenMessages();
- listenTyping();
- markSeen();
+  listenMessages();
+  listenTyping();
+  markSeen();
 }
 
-// 💬 SEND
-async function send(){
- let text=document.getElementById("msg").value;
- if(!text) return;
+// 💬 SEND MESSAGE
+async function send() {
+  let text = document.getElementById("msg").value;
+  if (!text) return;
 
- await supabase.from("messages").insert({
-  text:text,
-  user_no:myUser
- });
+  await supabase.from("messages").insert({
+    text: text,
+    user_no: myUser
+  });
 
- document.getElementById("msg").value="";
+  document.getElementById("msg").value = "";
 }
 
 // 📩 RECEIVE
-function listenMessages(){
- supabase.channel("chat")
- .on("postgres_changes",{event:"INSERT",table:"messages"},p=>{
-  addMsg(p.new);
- })
- .subscribe();
+function listenMessages() {
+  supabase.channel("chat")
+    .on("postgres_changes", { event: "INSERT", table: "messages" }, payload => {
+      addMsg(payload.new);
+    })
+    .subscribe();
 }
 
-function addMsg(m){
- let div=document.createElement("div");
- div.className="msg "+(m.user_no===myUser?"me":"other");
+function addMsg(m) {
+  let div = document.createElement("div");
+  div.className = "msg " + (m.user_no === myUser ? "me" : "other");
 
- let tick="";
- if(m.user_no===myUser){
-  tick=m.seen?" ✔✔":" ✔";
- }
+  let tick = "";
+  if (m.user_no === myUser) {
+    tick = m.seen ? " ✔✔" : " ✔";
+  }
 
- div.innerText=m.text+tick;
+  div.innerText = m.text + tick;
 
- chatBox.appendChild(div);
- chatBox.scrollTop=chatBox.scrollHeight;
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 // 👁️ SEEN
-async function markSeen(){
- await supabase.from("messages")
- .update({seen:true})
- .neq("user_no",myUser);
+async function markSeen() {
+  await supabase.from("messages")
+    .update({ seen: true })
+    .neq("user_no", myUser);
 }
 
 // ✍️ TYPING
-async function setTyping(){
- clearTimeout(typingTimer);
+async function setTyping() {
+  clearTimeout(typingTimer);
 
- let field=myUser===1?"user1":"user2";
+  let field = myUser === 1 ? "user1" : "user2";
 
- await supabase.from("typing").update({[field]:true}).eq("id",1);
+  await supabase.from("typing")
+    .update({ [field]: true })
+    .eq("id", 1);
 
- typingTimer=setTimeout(async()=>{
-  await supabase.from("typing").update({[field]:false}).eq("id",1);
- },1000);
+  typingTimer = setTimeout(async () => {
+    await supabase.from("typing")
+      .update({ [field]: false })
+      .eq("id", 1);
+  }, 1000);
 }
 
-function listenTyping(){
- supabase.channel("typing")
- .on("postgres_changes",{event:"UPDATE",table:"typing"},p=>{
-  let t=p.new;
-  let other=myUser===1?t.user2:t.user1;
+function listenTyping() {
+  supabase.channel("typing")
+    .on("postgres_changes", { event: "UPDATE", table: "typing" }, payload => {
+      let t = payload.new;
+      let other = myUser === 1 ? t.user2 : t.user1;
 
-  document.getElementById("typing").innerText =
-   other?"Stranger typing...":"";
- })
- .subscribe();
+      document.getElementById("typing").innerText =
+        other ? "Stranger typing..." : "";
+    })
+    .subscribe();
 }
 
 // 🚪 END CHAT
-async function endChat(){
- await supabase.from("messages").delete().neq("id","0");
- await supabase.from("room").update({users:0}).eq("id","main");
+async function endChat() {
+  await supabase.from("messages").delete().neq("id", "0");
+  await supabase.from("room").update({ users: 0 }).eq("id", "main");
 
- localStorage.clear();
- location.reload();
+  localStorage.clear();
+  location.reload();
 }
 
 // 🟢 OFFLINE
-window.addEventListener("beforeunload", async ()=>{
- let {data:r}=await supabase.from("room").select("*").eq("id","main").single();
- await supabase.from("room").update({users:Math.max(0,r.users-1)}).eq("id","main");
- localStorage.clear();
+window.addEventListener("beforeunload", async () => {
+  let { data: r } = await supabase.from("room").select("*").eq("id", "main").single();
+
+  await supabase.from("room")
+    .update({ users: Math.max(0, r.users - 1) })
+    .eq("id", "main");
+
+  localStorage.clear();
 });
 
 // 🎯 EVENTS
