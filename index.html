@@ -48,16 +48,15 @@ button { margin-left:10px; padding:10px; border:none; background:#075e54; color:
 <script>
 document.addEventListener("DOMContentLoaded", () => {
 
-// 🔑 CONFIG (REPLACE THESE)
 const supabase = window.supabase.createClient(
-  "https://acxtyboszuqibumlusjl.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFjeHR5Ym9zenVxaWJ1bWx1c2psIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDA0MTMsImV4cCI6MjA5MDM3NjQxM30.3njMzRvDHIxAeAfmtEYMzQ2ibhSNphra_eQV-e3I_DU"
+  "YOUR_SUPABASE_URL",
+  "YOUR_SUPABASE_ANON_KEY"
 );
 
 let myUser = 0;
 let typingTimer;
 
-// 🔐 SIMPLE LOGIN
+// 🔐 LOGIN
 async function enter() {
   let p = document.getElementById("pass").value.trim();
 
@@ -72,7 +71,11 @@ async function enter() {
     .eq("id", "main")
     .single();
 
-  if (room.users >= 2) return alert("Room Full");
+  // 🔥 FIX: auto reset ghost users
+  if (room.users >= 2) {
+    await supabase.from("room").update({ users: 0 }).eq("id", "main");
+    room.users = 0;
+  }
 
   myUser = room.users + 1;
 
@@ -95,17 +98,29 @@ function checkReconnect() {
   }
 }
 
-// 🚀 START CHAT
-function start() {
+// 🚀 START
+async function start() {
   document.getElementById("login").style.display = "none";
   document.getElementById("app").style.display = "block";
+
+  await loadOldMessages(); // 🔥 load history
 
   listenMessages();
   listenTyping();
   markSeen();
 }
 
-// 💬 SEND MESSAGE
+// 📜 LOAD OLD MESSAGES
+async function loadOldMessages() {
+  let { data } = await supabase
+    .from("messages")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  data.forEach(addMsg);
+}
+
+// 💬 SEND
 async function send() {
   let text = document.getElementById("msg").value;
   if (!text) return;
@@ -127,6 +142,7 @@ function listenMessages() {
     .subscribe();
 }
 
+// 💬 ADD MESSAGE
 function addMsg(m) {
   let div = document.createElement("div");
   div.className = "msg " + (m.user_no === myUser ? "me" : "other");
@@ -187,15 +203,15 @@ async function endChat() {
   location.reload();
 }
 
-// 🟢 OFFLINE
-window.addEventListener("beforeunload", async () => {
-  let { data: r } = await supabase.from("room").select("*").eq("id", "main").single();
+// 🟢 BETTER DISCONNECT
+window.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "hidden") {
+    let { data: r } = await supabase.from("room").select("*").eq("id", "main").single();
 
-  await supabase.from("room")
-    .update({ users: Math.max(0, r.users - 1) })
-    .eq("id", "main");
-
-  localStorage.clear();
+    await supabase.from("room")
+      .update({ users: Math.max(0, r.users - 1) })
+      .eq("id", "main");
+  }
 });
 
 // 🎯 EVENTS
