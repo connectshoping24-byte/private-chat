@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+body { margin:0; font-family:Arial; background:#ece5dd; }
+
+.header { background:#075e54; color:#fff; padding:15px; }
+#chatBox { height:75vh; overflow:auto; padding:10px; }
+
+.msg { max-width:70%; padding:10px; margin:5px; border-radius:10px; }
+.me { background:#dcf8c6; margin-left:auto; }
+.other { background:#fff; margin-right:auto; }
+
+.inputBar { display:flex; padding:10px; background:#fff; }
+input { flex:1; padding:10px; border-radius:20px; border:1px solid #ccc; }
+
+button { margin-left:10px; padding:10px; border:none; background:#075e54; color:#fff; border-radius:50%; }
+
+#typing { font-size:12px; padding:5px; }
+</style>
+</head>
+
+<body>
+
+<div id="login" style="padding:20px;">
+  <input type="password" id="pass" placeholder="Enter Password">
+  <button id="enterBtn">Enter</button>
+</div>
+
+<div id="app" style="display:none;">
+  <div class="header">Private Chat</div>
+  <div id="chatBox"></div>
+  <div id="typing"></div>
+
+  <div class="inputBar">
+    <input id="msg" placeholder="Type message...">
+    <button id="sendBtn">➤</button>
+  </div>
+
+  <button id="endBtn" style="width:100%;background:red;">End Chat</button>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+
+// 🔑 CONFIG (REPLACE THIS)
+const supabase = window.supabase.createClient(
+  "YOUR_SUPABASE_URL",
+  "YOUR_SUPABASE_ANON_KEY"
+);
+
+// 🔐 PASSWORD HASH (12345)
+const HASH = "5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9f0c3f7f9a";
+
+let myUser = 0;
+let typingTimer;
+
+// 🔐 HASH FUNCTION
+async function hash(t){
+ let b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));
+ return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+
+// 🔐 LOGIN
+async function enter(){
+ let p=document.getElementById("pass").value;
+ if(await hash(p)!==HASH) return alert("Wrong Password");
+
+ let {data:room}=await supabase.from("room").select("*").eq("id","main").single();
+
+ if(room.users>=2) return alert("Room Full");
+
+ myUser=room.users+1;
+
+ await supabase.from("room").update({
+  users:room.users+1,
+  last_active:new Date()
+ }).eq("id","main");
+
+ localStorage.setItem("user",myUser);
+
+ start();
+}
+
+// 📶 RECONNECT
+async function checkReconnect(){
+ let u=localStorage.getItem("user");
+ if(u){
+   myUser=parseInt(u);
+   start();
+ }
+}
+
+// 🚀 START CHAT
+function start(){
+ document.getElementById("login").style.display="none";
+ document.getElementById("app").style.display="block";
+
+ listenMessages();
+ listenTyping();
+ markSeen();
+}
+
+// 💬 SEND
+async function send(){
+ let text=document.getElementById("msg").value;
+ if(!text) return;
+
+ await supabase.from("messages").insert({
+  text:text,
+  user_no:myUser
+ });
+
+ document.getElementById("msg").value="";
+}
+
+// 📩 RECEIVE
+function listenMessages(){
+ supabase.channel("chat")
+ .on("postgres_changes",{event:"INSERT",table:"messages"},p=>{
+  addMsg(p.new);
+ })
+ .subscribe();
+}
+
+function addMsg(m){
+ let div=document.createElement("div");
+ div.className="msg "+(m.user_no===myUser?"me":"other");
+
+ let tick="";
+ if(m.user_no===myUser){
+  tick=m.seen?" ✔✔":" ✔";
+ }
+
+ div.innerText=m.text+tick;
+
+ chatBox.appendChild(div);
+ chatBox.scrollTop=chatBox.scrollHeight;
+}
+
+// 👁️ SEEN
+async function markSeen(){
+ await supabase.from("messages")
+ .update({seen:true})
+ .neq("user_no",myUser);
+}
+
+// ✍️ TYPING
+async function setTyping(){
+ clearTimeout(typingTimer);
+
+ let field=myUser===1?"user1":"user2";
+
+ await supabase.from("typing").update({[field]:true}).eq("id",1);
+
+ typingTimer=setTimeout(async()=>{
+  await supabase.from("typing").update({[field]:false}).eq("id",1);
+ },1000);
+}
+
+function listenTyping(){
+ supabase.channel("typing")
+ .on("postgres_changes",{event:"UPDATE",table:"typing"},p=>{
+  let t=p.new;
+  let other=myUser===1?t.user2:t.user1;
+
+  document.getElementById("typing").innerText =
+   other?"Stranger typing...":"";
+ })
+ .subscribe();
+}
+
+// 🚪 END CHAT
+async function endChat(){
+ await supabase.from("messages").delete().neq("id","0");
+ await supabase.from("room").update({users:0}).eq("id","main");
+
+ localStorage.clear();
+ location.reload();
+}
+
+// 🟢 OFFLINE
+window.addEventListener("beforeunload", async ()=>{
+ let {data:r}=await supabase.from("room").select("*").eq("id","main").single();
+ await supabase.from("room").update({users:Math.max(0,r.users-1)}).eq("id","main");
+ localStorage.clear();
+});
+
+// 🎯 EVENTS
+document.getElementById("enterBtn").onclick = enter;
+document.getElementById("sendBtn").onclick = send;
+document.getElementById("msg").oninput = setTyping;
+document.getElementById("endBtn").onclick = endChat;
+
+// INIT
+checkReconnect();
+
+});
+</script>
+
+</body>
+</html>
